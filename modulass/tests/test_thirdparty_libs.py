@@ -1,11 +1,24 @@
 import inspect
+import importlib
 import pytest
-import pandas.core.frame
 from modulass import ModulassTransformer
 
-src_pandas_frame = inspect.getsource(pandas.core.frame)
+sample_module_names = [
+    "pandas.core.frame",
+    "lifelib.libraries.basiclife.BasicTerm_S.Projection"
+]
 
 
-def test_pandas_frame():
+sample_modules = []
+for name in sample_module_names:
+    try:
+        sample_modules.append(importlib.import_module(name))
+    except ImportError:
+        pass
+
+
+@pytest.mark.parametrize("module", sample_modules)
+def test_pandas_frame(module):
     """Ensure no error"""
-    ModulassTransformer(src_pandas_frame).transformed
+    source = inspect.getsource(module)
+    ModulassTransformer(source).transformed
