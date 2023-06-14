@@ -1,6 +1,7 @@
 import builtins
 from typing import Optional
 import symtable
+
 # from symtable import symtable, SymbolTable
 import libcst as cst
 from libcst.metadata import (
@@ -60,10 +61,15 @@ class ModulassTransformer(cst.CSTTransformer):
         self.wrapper = cst.metadata.MetadataWrapper(cst.parse_module(source))
         self.module = self.wrapper.module
         self.node_to_scope = n_to_s = self.wrapper.resolve(cst.metadata.ScopeProvider)
+        self.parents = self.wrapper.resolve(cst.metadata.ParentNodeProvider)
         self.scopes = list(dict.fromkeys(n_to_s.values()))
         self.symtables = list_symtable(source)
-        self.global_names = self.symtables[0].get_identifiers()
         assert_scope_table_mapping(self.scopes, self.symtables)
+
+        self.name_to_symbol = [
+            {s.get_name(): s for s in table.get_symbols()} for table in self.symtables
+        ]
+        self.global_names = set()
 
         self.builtins = set(n for n in builtins.__dict__.keys()
                             if n[:2] != '__' or n[-2:] != '__')
@@ -73,38 +79,31 @@ class ModulassTransformer(cst.CSTTransformer):
         self.attr_stack = []
         self.funcdef_name = None
 
-    # @property
-    # def global_names(self):
-    #     return self.symtables[0].get_identifiers()
-
-    def is_global(self, node: cst.Name):
-
-        scope = self.node_to_scope.get(node, None)
-        if not scope:
-            return False
-
-        i = next(i for i, v in enumerate(self.scopes) if scope == v)
-        table = self.symtables[i]
-        if table.get_type() == 'function':
-            return node.value in table.get_globals()
-        else:
-            return node.value in table.get_identifiers()
-
     def should_replace(self, node: cst.Name):
 
-        name = node.value
-        # if name in self.builtins:
-        if self.is_global(node):
-            if name in self.global_names:   # including overwritten builtin names
-                return True
-            elif name in self.builtins:
-                return False
-            else:
-                return True # Name not defined in the module namespace
-        else:
-            return False
-        # return (self.is_global(node) and (self.global_names) and (name not in self.builtins))
+        # Name nodes in import statements are not in the keys of self.node_to_scope
+        # For such names, their parents' scopes are looked for
+        n = node
+        while not (scope := self.node_to_scope.get(n, None)):
+            prev = n
+            n = self.parents[n]
+            if n == prev:
+                raise RuntimeError(f"scope not found for {n.value}")
 
+        i = next(i for i, v in enumerate(self.scopes) if scope == v)
+
+        if symbol := self.name_to_symbol[i].get(node.value, None):
+            if symbol.is_global():
+                if symbol_top := self.name_to_symbol[0].get(node.value, None):
+                    return symbol_top.is_global() and symbol_top.is_assigned()
+                elif node.value in self.builtins:
+                    return False
+                else:
+                    return True
+            else:
+                return False
+        else:   # names between from and import, True, False, None
+            return False
 
     @property
     def transformed(self):
@@ -163,6 +162,7 @@ class ModulassTransformer(cst.CSTTransformer):
         if original_node == self.funcdef_name:
             return updated_node
         elif self.attr_stack and self.attr_stack[-1] == original_node:
+            # Do nothing if node is an attribute of another name
             return updated_node
         elif self.should_replace(original_node):
             return cst.Attribute(value=cst.Name('self'), attr=updated_node)

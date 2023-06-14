@@ -65,6 +65,23 @@ def foo(self):
 """
 ]
 
+src_const = [
+"""
+True
+None
+print('x')
+def foo():
+    print('x')
+""",
+"""
+True
+None
+print('x')
+def foo(self):
+    print('x')
+"""
+]
+
 src_params = [
 """
 def foo():
@@ -114,6 +131,7 @@ all_data = [
     src_dictcomp,
     src_builtin,
     src_overwritten_builtin,
+    src_const,
     src_params,
     src_nested
 ]
