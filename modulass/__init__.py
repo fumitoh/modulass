@@ -1,11 +1,13 @@
 import builtins
-from typing import Optional
 import symtable
+import textwrap
+from typing import Optional
 
 # from symtable import symtable, SymbolTable
 import libcst as cst
 from libcst.metadata import (
-    GlobalScope, ClassScope, FunctionScope, ComprehensionScope)
+    GlobalScope, ClassScope, FunctionScope, ComprehensionScope, ParentNodeProvider)
+import libcst.matchers as m
 
 
 def list_symtable(source) -> list:
@@ -53,15 +55,19 @@ def assert_scope_table_mapping(scope, table):
             raise RuntimeError("must not happen")
 
 
-class ModulassTransformer(cst.CSTTransformer):
+class ModulassTransformer(m.MatcherDecoratableTransformer):
 
-    def __init__(self, source):
+    METADATA_DEPENDENCIES = (ParentNodeProvider,)
+    matchers_compstats = m.If() | m.Try() | m.With() | m.For() | m.While()
+
+    def __init__(self, source, extract=None):
         super().__init__()
         self.source = source
+        self.extract = extract
         self.wrapper = cst.metadata.MetadataWrapper(cst.parse_module(source))
         self.module = self.wrapper.module
         self.node_to_scope = n_to_s = self.wrapper.resolve(cst.metadata.ScopeProvider)
-        self.parents = self.wrapper.resolve(cst.metadata.ParentNodeProvider)
+        self.parents = self.wrapper.resolve(ParentNodeProvider)
         self.scopes = list(dict.fromkeys(n_to_s.values()))
         self.symtables = list_symtable(source)
         assert_scope_table_mapping(self.scopes, self.symtables)
@@ -78,6 +84,7 @@ class ModulassTransformer(cst.CSTTransformer):
         self.in_func = 0
         self.attr_stack = []
         self.funcdef_name = None
+        self.is_import = False
 
     def should_replace(self, node: cst.Name):
 
@@ -107,18 +114,41 @@ class ModulassTransformer(cst.CSTTransformer):
 
     @property
     def transformed(self):
-        return self.module.visit(self).code
+        return self.wrapper.visit(self).code
 
-    # def visit_Import(self, node: "Import") -> Optional[bool]:
-    #     return False
-    #
-    # def visit_ImportFrom(self, node: "ImportFrom") -> Optional[bool]:
-    #     return False
+    @m.call_if_not_inside(m.FunctionDef())
+    @m.leave(m.SimpleStatementLine() | matchers_compstats | m.Comment() | m.EmptyLine())
+    def remove_statements(self, original_node, updated_node):
+        if (parent := self.get_metadata(ParentNodeProvider, original_node)) == self.module:
+            is_import = self.is_import
+            self.is_import = False
 
-    def visit_AsName(self, node: "AsName") -> Optional[bool]:
-        return False
+            if self.extract == 'func':
+                return cst.RemoveFromParent()
+            elif self.extract == 'import':
+                if is_import:
+                    return updated_node
+                else:
+                    return cst.RemoveFromParent()
+            elif self.extract == 'init':
+                if is_import:
+                    return cst.RemoveFromParent()
+                else:
+                    return updated_node
+            else:
+                return updated_node
+        else:
+            return updated_node
+
+    @m.leave(m.Import() | m.ImportFrom())
+    def flag_import(self, original_node, updated_node):
+        self.is_import = True
+        return updated_node
 
     def visit_FunctionDef(self, node: "FunctionDef") -> Optional[bool]:
+
+        if self.extract and self.extract != 'func':
+            return False
 
         if self.in_func > 0:
             self.in_func += 1
@@ -130,6 +160,9 @@ class ModulassTransformer(cst.CSTTransformer):
     def leave_FunctionDef(
         self, original_node: "FunctionDef", updated_node: "FunctionDef"
     ):
+        if self.extract and self.extract != 'func':
+            return cst.RemoveFromParent()
+
         if self.in_func > 1:
             self.in_func -= 1
             return updated_node
@@ -145,6 +178,11 @@ class ModulassTransformer(cst.CSTTransformer):
 
     def visit_ClassDef(self, node: "ClassDef") -> Optional[bool]:
         return False
+
+    def leave_ClassDef(
+        self, original_node: "ClassDef", updated_node: "ClassDef"
+    ):
+        return cst.RemoveFromParent()
 
     def visit_Attribute(self, node: "Attribute") -> Optional[bool]:
         self.attr_stack.append(node.attr)
@@ -168,4 +206,29 @@ class ModulassTransformer(cst.CSTTransformer):
             return cst.Attribute(value=cst.Name('self'), attr=updated_node)
         else:
             return updated_node
+
+
+_template = """\
+{imports}
+
+class {name}:
+
+    def __init__(self):
+{instance_vars}
+
+{method_defs}
+"""
+
+
+def transform(source: str, name: str):
+    imps = ModulassTransformer(source, extract='import').transformed
+    vars = ModulassTransformer(source, extract='init').transformed
+    defs = ModulassTransformer(source, extract='func').transformed
+
+    return _template.format(
+        name=name,
+        imports=imps,
+        instance_vars=textwrap.indent(vars, ' ' * 8),
+        method_defs=textwrap.indent(defs, ' ' * 4)
+    )
 
