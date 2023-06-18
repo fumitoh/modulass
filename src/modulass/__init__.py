@@ -1,7 +1,12 @@
+import keyword
+import sys
 import builtins
 import symtable
 import textwrap
+import argparse
+import pathlib
 from typing import Optional
+
 
 # from symtable import symtable, SymbolTable
 import libcst as cst
@@ -220,15 +225,48 @@ class {name}:
 """
 
 
-def transform(source: str, name: str):
+def transform(source: str, class_name: str):
     imps = ModulassTransformer(source, extract='import').transformed
     vars = ModulassTransformer(source, extract='init').transformed
     defs = ModulassTransformer(source, extract='func').transformed
 
     return _template.format(
-        name=name,
+        name=class_name,
         imports=imps,
         instance_vars=textwrap.indent(vars, ' ' * 8),
         method_defs=textwrap.indent(defs, ' ' * 4)
     )
+
+
+def transform_file(infile, outfile, class_name: str = ''):
+
+    if not class_name:
+        class_name = pathlib.Path(infile).stem
+
+    if not class_name.isidentifier() or keyword.iskeyword(class_name):
+        raise ValueError(f"{class_name} not a valid class name")
+
+    with open(infile, 'r') as f_in:
+        result = transform(f_in.read(), class_name)
+
+    with open(outfile, 'w') as f_out:
+        f_out.write(result)
+
+
+def main(argv):
+    """Transform a Python module into a class"""
+
+    parser = argparse.ArgumentParser(description="Transform a module into a class")
+    parser.add_argument('input',
+                        help="input file path")
+    parser.add_argument('output',
+                        help="output file path")
+    parser.add_argument('-n', '--name',
+                        default='',
+                        help="class name")
+
+    args = vars(parser.parse_args(argv))
+    transform_file(args['input'], args['output'], args['name'])
+
+    return 0
 
