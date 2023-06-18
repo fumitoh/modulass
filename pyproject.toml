@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "modulass"
+version = "0.0.1"
+authors = [
+  { name="Fumito Hamamura", email="fumito.ham@gmail.com" },
+]
+description = "Transform a module into a class"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "libcst",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/fumitoh/modulass"
+
+[tool.hatch.build]
+exclude = [
+    "temp*",
+    "example*.py",
+    "/tests",
+    ".gitignore",
+]
+
+
+
