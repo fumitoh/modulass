@@ -253,7 +253,7 @@ def transform_file(infile, outfile, class_name: str = ''):
         f_out.write(result)
 
 
-def main(argv):
+def main(argv=sys.argv[1:]):
     """Transform a Python module into a class"""
 
     parser = argparse.ArgumentParser(description="Transform a module into a class")

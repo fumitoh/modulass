@@ -21,6 +21,9 @@ dependencies = [
     "libcst",
 ]
 
+[project.scripts]
+modulass = "modulass:main"
+
 [project.urls]
 "Homepage" = "https://github.com/fumitoh/modulass"
 
