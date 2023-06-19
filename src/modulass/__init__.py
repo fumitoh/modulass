@@ -72,7 +72,6 @@ class ModulassTransformer(m.MatcherDecoratableTransformer):
         self.wrapper = cst.metadata.MetadataWrapper(cst.parse_module(source))
         self.module = self.wrapper.module
         self.node_to_scope = n_to_s = self.wrapper.resolve(cst.metadata.ScopeProvider)
-        self.parents = self.wrapper.resolve(ParentNodeProvider)
         self.scopes = list(dict.fromkeys(n_to_s.values()))
         self.symtables = list_symtable(source)
         assert_scope_table_mapping(self.scopes, self.symtables)
@@ -98,7 +97,7 @@ class ModulassTransformer(m.MatcherDecoratableTransformer):
         n = node
         while not (scope := self.node_to_scope.get(n, None)):
             prev = n
-            n = self.parents[n]
+            n = self.get_metadata(ParentNodeProvider, n)
             if n == prev:
                 raise RuntimeError(f"scope not found for {n.value}")
 
